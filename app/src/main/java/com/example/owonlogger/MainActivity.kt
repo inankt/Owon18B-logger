@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import java.io.OutputStream
@@ -38,11 +39,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var lvRecords: ListView
     private lateinit var adapter: ArrayAdapter<String>
 
-    // Lưu trữ dữ liệu: Pair(Giá trị số, Đơn vị)
     private val recordedData = mutableListOf<Pair<String, String>>()
     private val displayList = mutableListOf<String>()
 
-    // Biến phục vụ thuật toán bắt điểm chạm que đo
     private var lastRawValue: Double = Double.NaN
     private var stableCount = 0
     private var isCapturedForCurrentTouch = false
@@ -59,8 +58,19 @@ class MainActivity : AppCompatActivity() {
         adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, displayList)
         lvRecords.adapter = adapter
 
-        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        bluetoothAdapter = bluetoothManager.adapter
+        // Thêm tính năng: Giữ đè (Long Click) vào dòng nào để xóa dòng đó
+        lvRecords.setOnItemLongClickListener { _, _, position, _ ->
+            val itemText = displayList[position]
+            AlertDialog.Builder(this)
+                .setTitle("Xóa dòng đo")
+                .setMessage("Bạn có muốn xóa mục này không?\n$itemText")
+                .setPositiveButton("Xóa") { _, _ ->
+                    removeItem(position)
+                }
+                .setNegativeButton("Hủy", null)
+                .show()
+            true
+        }
 
         findViewById<Button>(R.id.btnConnect).setOnClickListener {
             checkPermissionsAndScan()
@@ -71,10 +81,35 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnClear).setOnClickListener {
-            recordedData.clear()
-            displayList.clear()
-            adapter.notifyDataSetChanged()
+            AlertDialog.Builder(this)
+                .setTitle("Xóa tất cả")
+                .setMessage("Bạn có chắc chắn muốn xóa toàn bộ danh sách?")
+                .setPositiveButton("Xóa hết") { _, _ ->
+                    recordedData.clear()
+                    updateDisplayList()
+                }
+                .setNegativeButton("Hủy", null)
+                .show()
         }
+    }
+
+    /**
+     * Xóa 1 dòng tại vị trí chỉ định và cập nhật lại STT hiển thị
+     */
+    private fun removeItem(position: Int) {
+        if (position in 0 until recordedData.size) {
+            recordedData.removeAt(position)
+            updateDisplayList()
+            Toast.makeText(this, "Đã xóa dòng đo!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun updateDisplayList() {
+        displayList.clear()
+        recordedData.forEachIndexed { index, pair ->
+            displayList.add("#${index + 1}:   ${pair.first} ${pair.second}")
+        }
+        adapter.notifyDataSetChanged()
     }
 
     private fun checkPermissionsAndScan() {
@@ -101,7 +136,6 @@ class MainActivity : AppCompatActivity() {
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val deviceName = result.device.name ?: return
-            // OWON 18B thường quảng bá tên là "BDM" hoặc chứa chữ "OWON"
             if (deviceName.contains("BDM", true) || deviceName.contains("OWON", true)) {
                 bluetoothAdapter.bluetoothLeScanner.stopScan(this)
                 tvStatus.text = "Trạng thái: Đang kết nối tới $deviceName..."
@@ -140,25 +174,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Giải mã gói tin 6-byte chuẩn giao thức OWON BLE (18B / B35T+ / B41T+)
-     */
     private fun parseOwonPacket(bytes: ByteArray) {
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         val word0 = buffer.short.toInt() and 0xFFFF
         val word1 = buffer.short.toInt() and 0xFFFF
-        val rawReading = buffer.short.toInt() // Signed 16-bit
+        val rawReading = buffer.short.toInt()
 
-        // Vị trí dấu thập phân (3 bit thấp của word0)
         val decimalPos = word0 and 0x07
-        // Chế độ đo (bit 6-9 của word0)
         val functionCode = (word0 shr 6) and 0x0F
-        // Tiền tố đơn vị (kilo, mega, milli, micro...)
         val scaleCode = (word1 shr 3) and 0x07
 
         val unit = decodeUnit(functionCode, scaleCode)
 
-        // Kiểm tra trạng thái Overload (OL) - chưa chạm que đo ở thang Ohm/Diode/Thông mạch
         if (rawReading == 0x7FFF || rawReading == -32768 || decimalPos == 7) {
             runOnUiThread { tvLiveValue.text = "OL $unit" }
             resetProbeState()
@@ -176,14 +203,7 @@ class MainActivity : AppCompatActivity() {
         processProbeTouch(actualValue, formattedValue, unit)
     }
 
-    /**
-     * Thuật toán phát hiện chạm que đo:
-     * - Bỏ qua khi giá trị gần 0 (chưa chạm que ở thang V/A)
-     * - Khi giá trị ổn định qua 3 lần đọc liên tiếp -> Chốt số và kêu Bíp
-     * - Khóa không lưu trùng lặp cho tới khi nhấc que đo ra
-     */
     private fun processProbeTouch(value: Double, formattedValue: String, unit: String) {
-        // Ngưỡng coi như đang hở mạch (nhấc que đo)
         val isOpenCircuit = abs(value) < 0.005
 
         if (isOpenCircuit) {
@@ -193,7 +213,6 @@ class MainActivity : AppCompatActivity() {
 
         if (isCapturedForCurrentTouch) return
 
-        // Kiểm tra độ ổn định (sai số dưới 0.5% so với mẫu trước đó)
         if (!lastRawValue.isNaN() && abs(value - lastRawValue) <= abs(value * 0.005) + 0.001) {
             stableCount++
         } else {
@@ -201,16 +220,13 @@ class MainActivity : AppCompatActivity() {
         }
         lastRawValue = value
 
-        // Đạt 3 lần ổn định liên tiếp (~1 giây chạm que) -> Ghi nhận kết quả
         if (stableCount >= 2) {
             isCapturedForCurrentTouch = true
             toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
 
             runOnUiThread {
-                val index = recordedData.size + 1
                 recordedData.add(Pair(formattedValue, unit))
-                displayList.add(0, "#$index:   $formattedValue $unit") // Đưa số mới nhất lên đầu
-                adapter.notifyDataSetChanged()
+                updateDisplayList()
             }
         }
     }
@@ -246,10 +262,6 @@ class MainActivity : AppCompatActivity() {
         return "$prefix$base"
     }
 
-    /**
-     * Xuất file CSV vào thư mục Downloads của điện thoại
-     * Cấu trúc: STT, Gia_tri, Don_vi (Không thời gian, không biểu đồ)
-     */
     private fun exportToCsv() {
         if (recordedData.isEmpty()) {
             Toast.makeText(this, "Chưa có dữ liệu để xuất!", Toast.LENGTH_SHORT).show()
