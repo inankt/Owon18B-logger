@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <Button
+        android:id="@+id/btnConnect"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Quét & Kết nối OWON 18B" />
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Trạng thái: Chưa kết nối"
+        android:paddingTop="8dp"
+        android:textStyle="italic" />
+
+    <TextView
+        android:id="@+id/tvLiveValue"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="---"
+        android:textSize="42sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:paddingVertical="20dp"
+        android:background="#EFEFEF"
+        android:layout_marginVertical="12dp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnExportCsv"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="Xuất file CSV"
+            android:layout_marginEnd="8dp"/>
+
+        <Button
+            android:id="@+id/btnClear"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Xóa hết" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Danh sách đã chốt:"
+        android:textStyle="bold"
+        android:paddingTop="12dp" />
+
+    <ListView
+        android:id="@+id/lvRecords"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>
