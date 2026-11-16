@@ -9,7 +9,7 @@
         android:id="@+id/btnConnect"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Quét & Kết nối OWON 18B" />
+        android:text="Quét &amp; Kết nối OWON 18B" />
 
     <TextView
         android:id="@+id/tvStatus"
