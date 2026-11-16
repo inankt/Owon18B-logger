@@ -45,11 +45,17 @@ class MainActivity : AppCompatActivity() {
     private var lastRawValue: Double = Double.NaN
     private var stableCount = 0
     private var isCapturedForCurrentTouch = false
-    private val toneGen = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+    private var toneGen: ToneGenerator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        try {
+            toneGen = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         tvStatus = findViewById(R.id.tvStatus)
         tvLiveValue = findViewById(R.id.tvLiveValue)
@@ -58,17 +64,19 @@ class MainActivity : AppCompatActivity() {
         adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, displayList)
         lvRecords.adapter = adapter
 
-        // Thêm tính năng: Giữ đè (Long Click) vào dòng nào để xóa dòng đó
+        // Sự kiện giữ đè (Long Click) để xóa từng dòng an toàn
         lvRecords.setOnItemLongClickListener { _, _, position, _ ->
-            val itemText = displayList[position]
-            AlertDialog.Builder(this)
-                .setTitle("Xóa dòng đo")
-                .setMessage("Bạn có muốn xóa mục này không?\n$itemText")
-                .setPositiveButton("Xóa") { _, _ ->
-                    removeItem(position)
-                }
-                .setNegativeButton("Hủy", null)
-                .show()
+            if (position in displayList.indices && position in recordedData.indices) {
+                val itemText = displayList[position]
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Xóa dòng đo")
+                    .setMessage("Bạn có muốn xóa mục này không?\n$itemText")
+                    .setPositiveButton("Xóa") { _, _ ->
+                        removeItem(position)
+                    }
+                    .setNegativeButton("Hủy", null)
+                    .show()
+            }
             true
         }
 
@@ -81,23 +89,24 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnClear).setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle("Xóa tất cả")
-                .setMessage("Bạn có chắc chắn muốn xóa toàn bộ danh sách?")
-                .setPositiveButton("Xóa hết") { _, _ ->
-                    recordedData.clear()
-                    updateDisplayList()
-                }
-                .setNegativeButton("Hủy", null)
-                .show()
+            if (recordedData.isNotEmpty()) {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Xóa tất cả")
+                    .setMessage("Bạn có chắc chắn muốn xóa toàn bộ danh sách?")
+                    .setPositiveButton("Xóa hết") { _, _ ->
+                        recordedData.clear()
+                        updateDisplayList()
+                    }
+                    .setNegativeButton("Hủy", null)
+                    .show()
+            } else {
+                Toast.makeText(this, "Danh sách đang trống!", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
-    /**
-     * Xóa 1 dòng tại vị trí chỉ định và cập nhật lại STT hiển thị
-     */
     private fun removeItem(position: Int) {
-        if (position in 0 until recordedData.size) {
+        if (position in recordedData.indices) {
             recordedData.removeAt(position)
             updateDisplayList()
             Toast.makeText(this, "Đã xóa dòng đo!", Toast.LENGTH_SHORT).show()
@@ -128,8 +137,18 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     private fun startBleScan() {
-        tvStatus.text = "Trạng thái: Đang tìm OWON..."
-        bluetoothAdapter.bluetoothLeScanner.startScan(scanCallback)
+        try {
+            val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+            bluetoothAdapter = bluetoothManager.adapter
+            if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+                tvStatus.text = "Trạng thái: Hãy bật Bluetooth!"
+                return
+            }
+            tvStatus.text = "Trạng thái: Đang tìm OWON..."
+            bluetoothAdapter.bluetoothLeScanner?.startScan(scanCallback)
+        } catch (e: Exception) {
+            tvStatus.text = "Lỗi quét: ${e.message}"
+        }
     }
 
     private val scanCallback = object : ScanCallback() {
@@ -137,8 +156,12 @@ class MainActivity : AppCompatActivity() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val deviceName = result.device.name ?: return
             if (deviceName.contains("BDM", true) || deviceName.contains("OWON", true)) {
-                bluetoothAdapter.bluetoothLeScanner.stopScan(this)
-                tvStatus.text = "Trạng thái: Đang kết nối tới $deviceName..."
+                try {
+                    bluetoothAdapter.bluetoothLeScanner?.stopScan(this)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                runOnUiThread { tvStatus.text = "Trạng thái: Đang kết nối tới $deviceName..." }
                 bluetoothGatt = result.device.connectGatt(this@MainActivity, false, gattCallback)
             }
         }
@@ -148,7 +171,7 @@ class MainActivity : AppCompatActivity() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                runOnUiThread { tvStatus.text = "Trạng thái: Đã kết nối. Đang đọc dữ liệu..." }
+                runOnUiThread { tvStatus.text = "Trạng thái: Đã kết nối. Đang đọc..." }
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 runOnUiThread { tvStatus.text = "Trạng thái: Mất kết nối" }
@@ -162,8 +185,10 @@ class MainActivity : AppCompatActivity() {
             gatt.setCharacteristicNotification(characteristic, true)
 
             val descriptor = characteristic.getDescriptor(CLIENT_CONFIG_UUID)
-            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            gatt.writeDescriptor(descriptor)
+            if (descriptor != null) {
+                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                gatt.writeDescriptor(descriptor)
+            }
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
@@ -175,32 +200,36 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun parseOwonPacket(bytes: ByteArray) {
-        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        val word0 = buffer.short.toInt() and 0xFFFF
-        val word1 = buffer.short.toInt() and 0xFFFF
-        val rawReading = buffer.short.toInt()
+        try {
+            val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+            val word0 = buffer.short.toInt() and 0xFFFF
+            val word1 = buffer.short.toInt() and 0xFFFF
+            val rawReading = buffer.short.toInt()
 
-        val decimalPos = word0 and 0x07
-        val functionCode = (word0 shr 6) and 0x0F
-        val scaleCode = (word1 shr 3) and 0x07
+            val decimalPos = word0 and 0x07
+            val functionCode = (word0 shr 6) and 0x0F
+            val scaleCode = (word1 shr 3) and 0x07
 
-        val unit = decodeUnit(functionCode, scaleCode)
+            val unit = decodeUnit(functionCode, scaleCode)
 
-        if (rawReading == 0x7FFF || rawReading == -32768 || decimalPos == 7) {
-            runOnUiThread { tvLiveValue.text = "OL $unit" }
-            resetProbeState()
-            return
+            if (rawReading == 0x7FFF || rawReading == -32768 || decimalPos == 7) {
+                runOnUiThread { tvLiveValue.text = "OL $unit" }
+                resetProbeState()
+                return
+            }
+
+            val divisor = 10.0.pow(decimalPos.toDouble())
+            val actualValue = rawReading / divisor
+            val formattedValue = String.format(Locale.US, "%.${decimalPos}f", actualValue)
+
+            runOnUiThread {
+                tvLiveValue.text = "$formattedValue $unit"
+            }
+
+            processProbeTouch(actualValue, formattedValue, unit)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
-
-        val divisor = 10.0.pow(decimalPos.toDouble())
-        val actualValue = rawReading / divisor
-        val formattedValue = String.format(Locale.US, "%.${decimalPos}f", actualValue)
-
-        runOnUiThread {
-            tvLiveValue.text = "$formattedValue $unit"
-        }
-
-        processProbeTouch(actualValue, formattedValue, unit)
     }
 
     private fun processProbeTouch(value: Double, formattedValue: String, unit: String) {
@@ -222,7 +251,11 @@ class MainActivity : AppCompatActivity() {
 
         if (stableCount >= 2) {
             isCapturedForCurrentTouch = true
-            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+            try {
+                toneGen?.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
 
             runOnUiThread {
                 recordedData.add(Pair(formattedValue, unit))
