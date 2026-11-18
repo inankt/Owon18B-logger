@@ -36,10 +36,14 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
     private lateinit var tvLiveValue: TextView
+    private lateinit var etPin: EditText
+    private lateinit var etNote: EditText
     private lateinit var lvRecords: ListView
     private lateinit var adapter: ArrayAdapter<String>
 
-    private val recordedData = mutableListOf<Pair<String, String>>()
+    // Lưu trữ dữ liệu: chứa (Số chân, Ghi chú, Giá trị, Đơn vị)
+    data class MeasureRecord(val pin: String, val note: String, val value: String, val unit: String)
+    private val recordedData = mutableListOf<MeasureRecord>()
     private val displayList = mutableListOf<String>()
 
     private var lastRawValue: Double = Double.NaN
@@ -59,12 +63,14 @@ class MainActivity : AppCompatActivity() {
 
         tvStatus = findViewById(R.id.tvStatus)
         tvLiveValue = findViewById(R.id.tvLiveValue)
+        etPin = findViewById(R.id.etPin)
+        etNote = findViewById(R.id.etNote)
         lvRecords = findViewById(R.id.lvRecords)
 
         adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, displayList)
         lvRecords.adapter = adapter
 
-        // Sự kiện giữ đè (Long Click) để xóa từng dòng an toàn
+        // Giữ đè để xóa từng dòng
         lvRecords.setOnItemLongClickListener { _, _, position, _ ->
             if (position in displayList.indices && position in recordedData.indices) {
                 val itemText = displayList[position]
@@ -115,8 +121,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateDisplayList() {
         displayList.clear()
-        recordedData.forEachIndexed { index, pair ->
-            displayList.add("#${index + 1}:   ${pair.first} ${pair.second}")
+        recordedData.forEachIndexed { index, record ->
+            val pinStr = if (record.pin.isNotEmpty()) " [Chân: ${record.pin}]" else ""
+            val noteStr = if (record.note.isNotEmpty()) " (${record.note})" else ""
+            displayList.add("#${index + 1}:$pinStr$noteStr -> ${record.value} ${record.unit}")
         }
         adapter.notifyDataSetChanged()
     }
@@ -161,7 +169,7 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
-                runOnUiThread { tvStatus.text = "Trạng thái: Đang kết nối tới $deviceName..." }
+                runOnUiThread { tvStatus.text = "Trạng thái: Đã kết nối tới $deviceName..." }
                 bluetoothGatt = result.device.connectGatt(this@MainActivity, false, gattCallback)
             }
         }
@@ -257,9 +265,21 @@ class MainActivity : AppCompatActivity() {
                 e.printStackTrace()
             }
 
+            // Lấy thông tin Số chân và Ghi chú hiện tại từ ô nhập liệu
+            val currentPin = etPin.text.toString().trim()
+            val currentNote = etNote.text.toString().trim()
+
             runOnUiThread {
-                recordedData.add(Pair(formattedValue, unit))
+                recordedData.add(MeasureRecord(currentPin, currentNote, formattedValue, unit))
                 updateDisplayList()
+
+                // Tự động tăng số chân lên +1 nếu là số, giữ nguyên ghi chú cho lần đo tiếp theo
+                if (currentPin.isNotEmpty()) {
+                    val pinNum = currentPin.toIntOrNull()
+                    if (pinNum != null) {
+                        etPin.setText((pinNum + 1).toString())
+                    }
+                }
             }
         }
     }
@@ -301,10 +321,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Cấu trúc file CSV: STT,So_chan,Ghi_chu,Gia_tri,Don_vi (Không thời gian, không biểu đồ)
         val csvBuilder = StringBuilder()
-        csvBuilder.append("STT,Gia_tri,Don_vi\n")
-        recordedData.forEachIndexed { index, pair ->
-            csvBuilder.append("${index + 1},${pair.first},${pair.second}\n")
+        csvBuilder.append("STT,So_chan,Ghi_chu,Gia_tri,Don_vi\n")
+        recordedData.forEachIndexed { index, record ->
+            csvBuilder.append("${index + 1},${record.pin},${record.note},${record.value},${record.unit}\n")
         }
 
         val fileName = "OWON_Data_${System.currentTimeMillis() % 10000}.csv"
