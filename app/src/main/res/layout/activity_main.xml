@@ -16,20 +16,46 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Trạng thái: Chưa kết nối"
-        android:paddingTop="8dp"
+        android:paddingTop="4dp"
         android:textStyle="italic" />
+
+    <!-- Khu vực nhập Số chân và Ghi chú -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+
+        <EditText
+            android:id="@+id/etPin"
+            android:layout_width="90dp"
+            android:layout_height="wrap_content"
+            android:hint="Số chân"
+            android:inputType="text"
+            android:textSize="14sp" />
+
+        <EditText
+            android:id="@+id/etNote"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:hint="Ghi chú (VD: Q101, IC...)"
+            android:inputType="text"
+            android:textSize="14sp"
+            android:layout_marginStart="8dp"/>
+    </LinearLayout>
 
     <TextView
         android:id="@+id/tvLiveValue"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="---"
-        android:textSize="42sp"
+        android:textSize="36sp"
         android:textStyle="bold"
         android:gravity="center"
-        android:paddingVertical="20dp"
+        android:paddingVertical="12dp"
         android:background="#EFEFEF"
-        android:layout_marginVertical="12dp"/>
+        android:layout_marginVertical="8dp"/>
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -54,9 +80,9 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Danh sách đã chốt (Giữ đè vào dòng bất kỳ để xóa):"
+        android:text="Danh sách đã chốt (Giữ đè dòng để xóa):"
         android:textStyle="bold"
-        android:paddingTop="12dp" />
+        android:paddingTop="8dp" />
 
     <ListView
         android:id="@+id/lvRecords"
